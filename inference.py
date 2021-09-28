@@ -30,34 +30,40 @@ def viterbi_decode(model: HmmTaggingModel, sentence: List[str]) -> LabeledSenten
     :return: a LabeledSentence containing the model's predictions. See BadTaggingModel for an example.
     """
     #the first index stores the previous value and for the first row it'll store -1
-    dp=[[[0,0]]*len(sentence)]*len(model.tag_indexer)
-    #max lambda compare the second element
-    for i in range(0,len(sentence)):
-        for j in range(0,len(model.tag_indexer)):
-            if i==0:
-                #using initial values store everything
-                val = model.score_init(j)*model.score_emission(sentence,j,i)  
-                dp[i][j]=[-1,val]
-            else:
-                #want to check every previous tag for the index
-                for k in range(0,len(model.tag_indexer)):
-                    val=model.score_init(j)*model.score_emission(sentence,j,i)*model.score_transition(k,j)*dp[i-1][k]
-                    if dp[i][j][1]<val:
-                        dp[i][j]=[k,val]
+    num_cols=len(model.tag_indexer)-1
+    dp=[[[-float('inf'),-float('inf')]for i in range(0,num_cols)] for j in range(0,len(sentence)+1)]
+    
+    for j in range(0,num_cols):
+        #initial values store everything
+        val = model.score_init(j)+model.score_emission(sentence,j,0)  
+        dp[0][j]=[-1,val]
+    
+    for i in range(1,len(sentence)):
+        for j in range(0,num_cols):
+            word_label_score=model.score_emission(sentence,j,i)
+            for k in range(0,num_cols):
+                #second part of the code represents the transition 
+                val=word_label_score+model.score_transition(k,j)+dp[i-1][k][1]
+                if dp[i][j][1]<val:
+                    dp[i][j]=[k,val]
+    #fill in the stop values
+    for j in range(0,num_cols):
+        val=model.score_transition(j,num_cols)+dp[-2][j][1]
+        dp[-1][j]=[j,val] 
+     
     #find the max value on the bottom row and go up 
     ret = [0]*len(sentence)
     max_index=0
-    for i in range(0,len(model.tag_indexer)):
-        if dp[-1][i][2]<dp[-1][max_index][2]:
+    for i in range(0,num_cols):
+        if dp[-1][max_index][1]<dp[-1][i][1]:
             max_index=i
-    ret[-1]=max_index
-    index=dp[-1][max_index][1]
-    counter=-2
+    index=dp[-1][max_index][0]
+    counter=-1
     while index!=-1:
-        ret[counter]=index
-        index=dp[counter][index][1]
+        ret[counter]=model.tag_indexer.get_object(index)
         counter-=1
-    return ret
+        index=dp[counter][index][0]
+    return labeled_sent_from_words_tags(sentence, ret)
 
 
 def beam_decode(model: HmmTaggingModel, sentence: List[str], beam_size: int) -> LabeledSentence:
