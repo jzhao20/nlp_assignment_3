@@ -73,4 +73,48 @@ def beam_decode(model: HmmTaggingModel, sentence: List[str], beam_size: int) -> 
     :param beam_size: the beam size to use
     :return: a LabeledSentence containing the model's predictions. See BadTaggingModel for an example.
     """
-    raise Exception("Implement me")
+    #unlike before we're going to have previous index value and tag
+    num_cols=beam_size
+    num_tags=len(model.tag_indexer)-1
+    dp=[None]*(len(sentence)+1)
+    #last row is going to be for the stop
+
+    initial_row=Beam(beam_size)
+    for i in range(0,num_tags):
+        val = model.score_init(i)+model.score_emission(sentence,i,0)  
+        initial_row.add([-1,val,i],val)
+    dp[0]=initial_row.get_elts()
+
+    for i in range(1,len(sentence)):
+        new_row=Beam(beam_size)
+        for j in range(0,num_cols):
+            #previous score
+            prev_val=dp[i-1][j][1]
+            for k in range(0,num_tags):
+                #word value
+                word_val=model.score_emission(sentence,k,i)
+                transition_val=model.score_transition(dp[i-1][j][2],k)
+                score=word_val+transition_val+prev_val
+                new_row.add([j,score,k],score)
+        dp[i]=new_row.get_elts()
+
+    final_row=Beam(beam_size)
+    for i in range(0,num_cols):
+        #find the best stop and set it as that   
+        new_val=model.score_transition(dp[-2][i][2],num_tags)+dp[-2][i][1]
+        final_row.add([i,new_val,-1],new_val)
+    dp[-1]=final_row.get_elts()
+
+    ret=[0]*len(sentence)
+    index=dp[-1][0][0]
+    counter=-1
+    while index!=-1:
+        tag=dp[counter-1][index][2]
+        ret[counter]=model.tag_indexer.get_object(tag)
+        counter-=1
+        index=dp[counter][index][0]
+    return labeled_sent_from_words_tags(sentence, ret)
+
+
+
+
